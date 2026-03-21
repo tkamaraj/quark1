@@ -3,7 +3,7 @@ import utils.gen as ugen
 
 HELP = ugen.HelpObj(
     usage="false",
-    summary=f"Does nothing. Just returns {uerr.ERR_FALSE}",
+    summary=f"Just returns {uerr.ERR_FALSE}",
     details=()
 )
 

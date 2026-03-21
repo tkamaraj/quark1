@@ -11,7 +11,7 @@ if ty.TYPE_CHECKING:
 
 HELP = ugen.HelpObj(
     usage="cd [flag] [pth]",
-    summary="Changes the current working directory of the interpreter",
+    summary="Change working directory",
     details=(
         "ARGUMENTS",
         "\t<none>",
@@ -24,7 +24,7 @@ HELP = ugen.HelpObj(
         "\t-p",
         "\t\tPrint directory after changing to it",
         "\t-m",
-        "\t\tMake directories before changing",
+        "\t\tCreate directories before changing",
         "\t--tmp",
         "\t\tCreate temporary directory and change to it"
     )

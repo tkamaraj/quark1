@@ -14,14 +14,20 @@ HELP_TXT = f"""USAGE
 ARGUMENTS
 \tnone
 OPTIONS
-\tnone
+\t--debug-time-unit  Set unit for debugging time output
+                     Valid: 'ns', 'us', 'ms', 's'
 FLAGS
-\t-d    Enable debugging mode
-\t-e    Load all external commands on startup
+\t-d                 Show debug messages
+\t-e                 Load all external commands on startup
+\t-pe                Preserve ANSI codes in STDERR redirects
+\t-i                 Show info messages
+\t-W                 Suppress warnings
+\t-h / --help        Display help text
 """.expandtabs(2)
 
 class MainProgParsed(ty.NamedTuple):
     pre_ld_ext_cmds: bool
+    stderr_ansi: bool
     log_lvl: int
     debug_time_expo: int
 
@@ -39,6 +45,7 @@ def parse_argv(passed_toks: list[str]) -> MainProgParsed:
     skip = 0
 
     pre_ld_ext_cmds = False
+    stderr_ansi = False
     log_lvl = ulog.WARN
     debug_time_expo = 6
 
@@ -53,6 +60,9 @@ def parse_argv(passed_toks: list[str]) -> MainProgParsed:
         # Flag: Show debug
         elif tok == "-d":
             log_lvl = ulog.DEBUG
+        # Flag: Preserve ANSI colour codes in STDERR redirects
+        elif tok == "-pe":
+            stderr_ansi = True
         # Flag: Show info
         elif tok == "-i":
             log_lvl = ulog.INFO
@@ -88,6 +98,7 @@ def parse_argv(passed_toks: list[str]) -> MainProgParsed:
 
     return MainProgParsed(
         pre_ld_ext_cmds=pre_ld_ext_cmds,
+        stderr_ansi=stderr_ansi,
         log_lvl=log_lvl,
         debug_time_expo=debug_time_expo
     )
@@ -105,6 +116,7 @@ def main() -> None:
         intrpr = ieng.Intrpr(
             cfg=cfg,
             pre_ld_ext_cmds=parsed_argv.pre_ld_ext_cmds,
+            stderr_ansi=parsed_argv.stderr_ansi,
             debug_time_expo=parsed_argv.debug_time_expo,
             log_lvl=parsed_argv.log_lvl
         )

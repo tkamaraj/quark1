@@ -12,7 +12,7 @@ if ty.TYPE_CHECKING:
 
 HELP = ugen.HelpObj(
     usage="help [cmd ...]",
-    summary="Displays help for built-in commands",
+    summary="Display help for commands",
     details=(
         "ARGUMENTS",
         "\t<none>",

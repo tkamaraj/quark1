@@ -47,6 +47,7 @@ class Intrpr:
             self,
             cfg: cmgr.Cfg,
             pre_ld_ext_cmds: bool,
+            stderr_ansi: bool,
             debug_time_expo: int,
             log_lvl: int
         ) -> None:
@@ -72,6 +73,7 @@ class Intrpr:
         self.ext_cached_cmds = {}
 
         self.cfg = cfg
+        self.stderr_ansi = stderr_ansi
         self.debug_time_expo = debug_time_expo
         self.log_lvl = log_lvl
         self.env_vars = iint.Env()
@@ -434,13 +436,14 @@ class Intrpr:
             # STDERR redirection
             elif sp_chr.val == "?":
                 # Get the next token to 
-                if idx == len_parser_out - 1:
+                # CURSED
+                try:
+                    nxt_grp, sp_chr = parser_out[idx + 1]
+                    stderr_fl = nxt_grp[0]
+                except IndexError:
                     err_code = err_code or uerr.ERR_MISSING_FL_STDERR_REDIR
                     ugen.err_Q("Missing filename for STDERR redirection")
                     break
-                # CURSED
-                nxt_grp, sp_chr = parser_out[idx + 1]
-                stderr_fl = nxt_grp[0]
                 # Add the next token group to the current token group,
                 # excluding the STDERR redirect filename
                 tok_grp.extend(nxt_grp[1 :])
@@ -578,7 +581,10 @@ class Intrpr:
             if stderr is not None:
                 try:
                     with open(stderr_fl.val, "w") as f:
-                        f.write(stderr)
+                        if self.stderr_ansi:
+                            f.write(stderr)
+                        else:
+                            f.write(ugen.rm_ansi("", stderr))
                     continue
                 except PermissionError:
                     err_code = err_code or uerr.ERR_PERM_DENIED
@@ -586,10 +592,10 @@ class Intrpr:
                 except FileNotFoundError:
                     err_code = err_code or uerr.ERR_EMPTY_FL_REDIR
                     ugen.err_Q(f"Empty file; cannot write STDERR to file \"{stderr_fl.val}\"")
-                except Exception:
+                except Exception as e:
                     err_code = err_code or uerr.ERR_UNK_ERR
                     ugen.fatal_Q(
-                        f"Unknown error; cannot write STDERR to file \"{stderr_fl.val}\"",
+                        f"Unknown error ({e}); cannot write STDERR to file \"{stderr_fl.val}\"",
                         uerr.ERR_UNK_FATAL,
                         tb.format_exc()
                     )

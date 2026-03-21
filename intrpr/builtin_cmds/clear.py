@@ -3,7 +3,7 @@ import utils.gen as ugen
 
 HELP = ugen.HelpObj(
     usage="clear",
-    summary="Clears the terminal screen",
+    summary="Clear the terminal screen",
     details=(
         "ARGUMENTS",
         "\t<none>",
