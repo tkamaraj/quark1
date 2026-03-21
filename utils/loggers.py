@@ -13,12 +13,6 @@ FATAL = 60
 LOG_FL = os.path.join(uconst.RUN_PTH, "quark.log")
 
 
-class Debug:
-    def __init__(self) -> None:
-        print("Debug object instantiated")
-        print("Make sure to remove in the final build")
-
-
 class QuarkLogger(lg.getLoggerClass()):
     """
     Custom logger extending the logging.Logger class to add separate
@@ -144,14 +138,14 @@ def init_lgrs(
     )
 
     # Create handlers
-    lgr_c_hdler = lg.StreamHandler()
-    lgr_q_hdler = lg.StreamHandler()
-    fl_hdler = lg.FileHandler(LOG_FL, "a", encoding="utf-8")
+    lgr_c_hdlr = lg.StreamHandler()
+    lgr_q_hdlr = lg.StreamHandler()
+    fl_hdlr = lg.FileHandler(LOG_FL, "a", encoding="utf-8")
 
     # Add formatters to handlers
-    lgr_c_hdler.setFormatter(lgr_c_fmter)
-    lgr_q_hdler.setFormatter(lgr_q_fmter)
-    fl_hdler.setFormatter(fl_fmter)
+    lgr_c_hdlr.setFormatter(lgr_c_fmter)
+    lgr_q_hdlr.setFormatter(lgr_q_fmter)
+    fl_hdlr.setFormatter(fl_fmter)
 
     # Set log levels
     lgr_c.setLevel(log_lvl_c)
@@ -159,9 +153,9 @@ def init_lgrs(
     fl_lgr.setLevel(log_lvl_fl)
 
     # Add handlers to loggers
-    lgr_c.addHandler(lgr_c_hdler)
-    lgr_q.addHandler(lgr_q_hdler)
-    fl_lgr.addHandler(fl_hdler)
+    lgr_c.addHandler(lgr_c_hdlr)
+    lgr_q.addHandler(lgr_q_hdlr)
+    fl_lgr.addHandler(fl_hdlr)
 
     return AllLgrs(lgr, lgr_c, lgr_q, fl_lgr)
 

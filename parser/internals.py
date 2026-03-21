@@ -31,7 +31,7 @@ class SpChr:
 
 
 QUOTES = ("'", "\"")
-SP_CHRS = ("|", ">")
+SP_CHRS = ("|", ">", "?")
 ESC_CHR_MAP = {
     "\\\\": "\\",
     "\\'": "'",

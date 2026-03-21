@@ -110,7 +110,7 @@ def main() -> None:
         )
     except Exception as e:
         ugen.fatal_Q(
-            f"Encountered {e.__class__.__name__} during initialisation",
+            f"During initialisation: {e.__class__.__name__}: {e}",
             uerr.ERR_UNK_FATAL,
             exc_txt=tb.format_exc()
         )
@@ -129,8 +129,9 @@ def main() -> None:
             sys.exit(uerr.ERR_ALL_GOOD)
         except Exception as e:
             ugen.fatal_Q(
-                f"Fatal: In main interpreter loop: got hit with {e.__class__.__name__}",
-                uerr.ERR_UNK_FATAL
+                f"In main interpreter loop: {e.__class__.__name__}: {e}",
+                uerr.ERR_UNK_FATAL,
+                exc_txt=tb.format_exc()
             )
 
 

@@ -35,13 +35,13 @@ def run(data: ugen.CmdData) -> int:
         data.env_vars.set(var_nm, var_val)
     except ugen.InvVarTypErr:
         err_code = uerr.ERR_ENV_VAR_INV_TYP
-        ugen.err("Invalid variable type for '{var_nm}': '{var_val.__name__}'")
+        ugen.err(f"Invalid variable type for '{var_nm}': '{var_val.__name__}'")
     except ugen.InvVarNmErr:
         err_code = uerr.ERR_ENV_VAR_INV_NM
-        ugen.err("Invalid variable name: '{var_nm}'")
+        ugen.err(f"Invalid variable name: '{var_nm}'")
     except ugen.UnkVarErr:
         err_code = uerr.ERR_ENV_UNK_VAR
-        ugen.err("Unknown variable: '{var_nm}'")
+        ugen.err(f"Unknown variable: '{var_nm}'")
 
     return err_code
 

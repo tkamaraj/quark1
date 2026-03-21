@@ -49,22 +49,24 @@ class Err:
         self.code = code
 
 
-def ld_fl(fl_nm: str) -> tuple[int, str] | Err:
-    fl_nm = pl.Path(fl_nm).expanduser().absolute().resolve()
+def ld_fl(orig_fl_nm: str) -> tuple[int, str] | Err:
+    fl_nm = pl.Path(orig_fl_nm).expanduser().absolute().resolve()
     try:
         with open(fl_nm) as f:
             fl_cntnt = f.read()
         # Bytes
         fl_sz = pl.Path(fl_nm).stat().st_size
     except FileNotFoundError:
-        return Err(f"No such file: \"{fl_nm}\"", uerr.ERR_FL_404)
+        return Err(f"No such file: \"{orig_fl_nm}\"", uerr.ERR_FL_404)
     except PermissionError:
-        return Err(f"Access denied: \"{fl_nm}\"", uerr.ERR_PERM_DENIED)
+        return Err(f"Access denied: \"{orig_fl_nm}\"", uerr.ERR_PERM_DENIED)
     except UnicodeDecodeError:
-        return Err(f"Does not appear to contain text: \"{fl_nm}\"",
+        return Err(f"Does not appear to contain text: \"{orig_fl_nm}\"",
                    uerr.ERR_DECODE_ERR)
+    except IsADirectoryError:
+        return Err(f"Is a directory: \"{orig_fl_nm}\"", uerr.ERR_IS_A_DIR)
     except Exception:
-        return Err(f"Unknown error ({e.__class__.__name__}): \"{fl_nm}\"",
+        return Err(f"Unknown error ({e.__class__.__name__}): \"{orig_fl_nm}\"",
                    uerr.ERR_UNK_ERR)
 
     return (str(fl_sz), fl_cntnt)
