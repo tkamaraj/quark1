@@ -20,10 +20,21 @@ import intrpr.internals as iint
 import parser.eng as peng
 import utils.gen as ugen
 import utils.consts as uconst
+import utils.debug as udeb
 import utils.err_codes as uerr
 
 if ty.TYPE_CHECKING:
     import parser.internals as pint
+
+TH_TokGrp = tuple[list[str], "pint.SpChr"]
+TH_CmdFn = ty.Callable[[ugen.CmdData], int]
+TH_GetCmdRes = tuple[TH_CmdFn, ugen.CmdSpec]
+
+
+class CmdReslnRes(ty.NamedTuple):
+    cmd_fn: ty.Callable[[ugen.CmdData], int]
+    cmd_spec: ugen.CmdSpec
+    cmd_src: str
 
 
 def fmt_t_ns(time_expo: int, ns: int) -> str:
@@ -36,8 +47,10 @@ def fmt_t_ns(time_expo: int, ns: int) -> str:
     elif time_expo == 9:
         unit = "s"
     else:
-        # TODO: Change!
-        raise NotImplementedError("FOOL!")
+        ugen.fatal(
+            "Unrecognised debug time unit; this is not supposed to happen",
+            uerr.ERR_UNK_ERR
+        )
 
     return str(round(ns / 10 ** time_expo, 3)) + unit
 
@@ -68,10 +81,14 @@ class Intrpr:
             uerr.ERR_CMD_SYN_ERR: "Syntax error in command module"
         }
 
-        ugen.warn("Exercise caution when running untrusted commands")
+        ugen.warn_Q("Exercise caution when running untrusted commands")
+
+        self.usr_dir = pl.Path("~").expanduser()
+        self.uid = str(os.getuid())
+        self.usernm = pwd.getpwuid(int(self.uid)).pw_name
+        self.is_usr_root = (self.uid == "0")
 
         self.ext_cached_cmds = {}
-
         self.cfg = cfg
         self.stderr_ansi = stderr_ansi
         self.debug_time_expo = debug_time_expo
@@ -81,12 +98,7 @@ class Intrpr:
         self.cmd_reslvr = icrsr.CmdReslvr(self.ext_cached_cmds,
                                           self.debug_time_expo)
 
-        self.usr_dir = pl.Path("~").expanduser()
-        self.uid = str(os.getuid())
-        self.usernm = pwd.getpwuid(int(self.uid)).pw_name
-        self.is_usr_root = self.uid == "0"
-
-        self.env_vars.set("_USR_DIR_", self.usr_dir)
+        self.env_vars.set("_USR_DIR_", str(self.usr_dir))
         self.env_vars.set("_PREV_CWD_", os.getcwd())
         self.env_vars.set("_LAST_BAD_PROMPT_", "")
         self.env_vars.set("_LAST_RET_", uerr.ERR_ALL_GOOD)
@@ -104,7 +116,14 @@ class Intrpr:
                                 fmt_t_ns(self.debug_time_expo, _t_pre_ld))
             )
 
-        os.chdir(self.usr_dir)
+        try:
+            os.chdir(udeb.TMP_DIR)
+        except FileNotFoundError:
+            pass
+        except PermissionError:
+            pass
+        except OSError:
+            pass
 
         # Interpreter initialisation time end
         _t_intrpr_init = time.perf_counter_ns() - _t_intrpr_init
@@ -115,8 +134,17 @@ class Intrpr:
         )
 
     def reslv_prompt(self, prompt: str | None) -> str:
-        # Pretty bad design, I guess, handling the None case for var prompt in
-        # this method, but I don't want to clutter up the main file
+        """
+        "Resolve" the prompt, i.e. do all prompt substitutions.
+
+        :param prompt: Prompt string.
+        :type prompt: str | None
+
+        :returns: Prompt string after prompt substitutions are performed.
+        :rtype: str
+        """
+        # Pretty bad design, I guess, handling the None case for variable
+        # prompt in this method, but I don't want to clutter up the main file
         prompt = prompt or uconst.Defaults.PROMPT
         len_prompt = len(prompt)
         final_prompt = ""
@@ -142,7 +170,7 @@ class Intrpr:
             # Condensed path
             if prompt[i + 1] == "p":
                 cwd_conden = re.sub(
-                    f"^{re.escape(str(self.env_vars.get('_USR_DIR_')))}",
+                    f"^{re.escape(str(self.usr_dir))}",
                     "~",
                     os.getcwd()
                 )
@@ -154,7 +182,7 @@ class Intrpr:
             # except the root and user directory
             elif prompt[i + 1] == "P":
                 cwd_conden = re.sub(
-                    f"^{self.env_vars.get('_USR_DIR_')}",
+                    f"^{self.usr_dir}",
                     "~",
                     os.getcwd()
                 )
@@ -226,6 +254,10 @@ class Intrpr:
         return final_prompt
 
     def use_cfg(self) -> None:
+        """
+        Use user-provided config values, i.e. set interpreter attributes as per
+        config given.
+        """
         self.env_vars.set("_PROMPT_", self.cfg.prompt)
         pths = []
         for i in self.cfg.pth:
@@ -236,6 +268,10 @@ class Intrpr:
         self.env_vars.set("_PTH_", tuple(pths))
 
     def ld_all_ext_mods(self) -> None:
+        """
+        Load all external modules into cache. Intended to be used at
+        interpreter startup.
+        """
         pths = self.env_vars.get("_PTH_")
         for pth in pths:
             pth = pl.Path(pth).expanduser().resolve()
@@ -253,45 +289,77 @@ class Intrpr:
                 )
 
     def get_cmd(
-            self,
-            cmd_nm: str,
-            ext_cached_cmds: dict[str, iint.CmdCacheEntry],
-            cmd_reslvr: icrsr.CmdReslvr,
-            env_vars: iint.Env
-        ) -> tuple[
-            tuple[ty.Callable[[ugen.CmdData], int], ugen.CmdSpec] | int,
-            str
-        ]:
+        self,
+        cmd_nm: str,
+        ext_cached_cmds: dict[str, iint.CmdCacheEntry],
+        cmd_reslvr: icrsr.CmdReslvr,
+        env_vars: iint.Env
+    ) -> tuple[
+        ty.Callable[[ugen.CmdData], int],
+        ugen.CmdSpec,
+        str
+    ] | int:
+        """
+        Get the command function, command spec and command source using the
+        command resolver.
 
+        :param cmd_nm: Command name
+        :type cmd_nm: str
+
+        :param ext_cached_cmds: Cached external commands
+        :type ext_cached_cmds: dict[str, intrpr.internals.CmdCacheEntry]
+
+        :param cmd_reslvr: Command resolver object
+        :type cmd_reslvr: intrpr.cmd_reslvr.CmdReslvr
+
+        :param env_vars: Environment variables
+        :type env_vars: intrpr.internals.Env
+
+        :returns: If successful in fetching the command function and spec, a
+                  tuple containing:
+                      - the command function and
+                      - the command spec.
+                  Else, an integer error code.
+        :rtype: tuple[
+                    typing.Callable[[utils.gen.CmdData], int],
+                    utils.gen.CmdSpec,
+                    str
+                ] | int
+        """
         builtin_cmd = self.cmd_reslvr.get_builtin_cmd(cmd_nm)
         if isinstance(builtin_cmd, tuple):
-            return (builtin_cmd, "built-in")
+            return (*builtin_cmd, "built-in")
 
-        ext_cmd = self.cmd_reslvr.get_ext_cmd(cmd_nm,
-                                              env_vars.get("_PTH_"),
-                                              ext_cached_cmds)
-        return (ext_cmd, "external")
+        ext_cmd = self.cmd_reslvr.get_ext_cmd(
+            cmd_nm,
+            env_vars.get("_PTH_"),
+            ext_cached_cmds
+        )
+        if isinstance(ext_cmd, int):
+            return ext_cmd
+        return (*ext_cmd, "external")
 
-    def classi_parser_output(
-            self,
-            tok_grp: "list[pint.Tok]",
-            cmd_spec: ugen.CmdSpec
-        ) -> tuple[tuple[str, ...], dict[str, str], tuple[str, ...]] | int:
+    def classi_par_out(
+        self,
+        tok_grp: "list[pint.Tok]",
+        cmd_spec: ugen.CmdSpec
+    ) -> tuple[tuple[str, ...], dict[str, str], tuple[str, ...]] | int:
         """
         Helper function to classify parser output into arguments, flags and
         options.
 
-        :param tok_grp: Token group yielded from the parser
+        :param tok_grp: Token group yielded from parser.
         :type tok_grp: list[parser.internals.Tok]
 
-        :param cmd_spec: Command spec from the command file
+        :param cmd_spec: Command spec from command file.
         :type cmd_spec: utils.gen.CmdSpec
 
         :returns: If no errors occured, a tuple containing:
-            - a tuple of strings (argument array),
-            - a dictionary of string keys and string values (option array) and
-            - a tuple of strings (flag array).
-            Otherwise, an error code.
+                      - a tuple of strings (argument array),
+                      - a dictionary of string keys and string values (option
+                        array) and
+                      - a tuple of strings (flag array).
+                  Otherwise, an integer error code.
         """
         args = []
         opts = {}
@@ -309,8 +377,7 @@ class Intrpr:
             # An option or a flag
             if tok_val.startswith("-") and not tok.escd_hyphen:
                 # Not in spec
-                if tok_val not in cmd_spec.opts \
-                        and tok_val not in cmd_spec.flags:
+                if tok_val not in (*cmd_spec.opts, *cmd_spec.flags):
                     ugen.err(f"Invalid option/flag: '{tok.val}'")
                     return uerr.ERR_INV_OPTS_FLAGS
                 # Flags are given more preference
@@ -344,6 +411,18 @@ class Intrpr:
         return (tuple(args), opts, tuple(flags))
 
     def rd_from_fd(self, fd: io.IOBase, n: int) -> bytes:
+        """
+        Read data from stream.
+
+        :param fd: Stream to read data from.
+        :type fd: io.IOBase
+
+        :param n: Number of bytes to read.
+        :type n: int
+
+        :returns: Bytes object read.
+        :rtype: bytes
+        """
         chunks = []
         total = 0
 
@@ -356,40 +435,227 @@ class Intrpr:
 
         return b"".join(chunks)
 
+    def write_to_stderr(
+        self,
+        stderr: str | None,
+        stderr_fl: "pint.Tok | None"
+    ) -> int:
+        """
+        :param stderr: Text captured for STDERR redirection.
+        :type stderr: str | None
+
+        :param stderr_fl: File to redirect STDERR to.
+        :type stderr_fl: parser.internals.Tok | None
+
+        :returns: Integer error code.
+        :rtype: int
+        """
+        if stderr is None or stderr_fl is None:
+            return uerr.ERR_ALL_GOOD
+
+        try:
+            with open(stderr_fl.val, "w") as f:
+                if self.stderr_ansi:
+                    f.write(stderr)
+                else:
+                    f.write(ugen.rm_ansi("", stderr))
+        except PermissionError:
+            ugen.err_Q(f"Access denied; cannot write STDERR to file \"{stderr_fl.val}\"")
+            return uerr.ERR_PERM_DENIED
+        except FileNotFoundError:
+            ugen.err_Q(f"Empty file; cannot write STDERR to file \"{stderr_fl.val}\"")
+            return uerr.ERR_EMPTY_FL_REDIR
+        except Exception as e:
+            ugen.fatal_Q(
+                f"Unknown error ({e}); cannot write STDERR to file \"{stderr_fl.val}\"",
+                uerr.ERR_UNK_FATAL,
+                tb.format_exc()
+            )
+            return uerr.ERR_UNK_ERR
+
+    def loop_set_lgr_streams(
+        self,
+        chk_if: io.TextIOBase,
+        set_to: io.TextIOBase
+    ) -> None:
+        """
+        Loop through and set logger streams.
+
+        :param chk_if: Object to check if streams against
+        :type chk_if: io.TextIOBase
+
+        :param set_to: Object to set streams to
+        :type set_to: io.TextIOBase
+        """
+        for lgr in lg.Logger.manager.loggerDict.values():
+            if isinstance(lgr, lg.PlaceHolder):
+                continue
+            for hdlr in lgr.handlers:
+                if hdlr.stream is chk_if:
+                    hdlr.stream = set_to
+
+    def cmd_resln(
+        self,
+        cmd_nm: str,
+        buf_stderr: io.StringIO,
+        stderr_fl: str | None
+    ) -> CmdReslnRes | int:
+        # DEBUG: Command resolution time start
+        _t_cmd_resln = time.perf_counter_ns()
+
+        err_code = uerr.ERR_ALL_GOOD
+        get_cmd_res = self.get_cmd(
+            cmd_nm,
+            self.ext_cached_cmds,
+            self.cmd_reslvr,
+            self.env_vars
+        )
+
+        if isinstance(get_cmd_res, int):
+            # Write error message to current STDERR
+            err_msg = self.GET_CMD_ERR_MSG_MAP.get(
+                get_cmd_res,
+                "missing_err_msg"
+            )
+            err_code = get_cmd_res
+            ugen.err_Q(f"{err_msg}: '{cmd_nm}'")
+            self.write_to_stderr(buf_stderr.getvalue(), stderr_fl)
+            return get_cmd_res
+
+        # DEBUG: Command resolution time end
+        _t_cmd_resln = time.perf_counter_ns() - _t_cmd_resln
+        ugen.debug_Q(
+            ugen.fmt_d_stmt(
+                "time",
+                "cmd_reslv",
+                fmt_t_ns(self.debug_time_expo, _t_cmd_resln)
+            )
+        )
+
+        return CmdReslnRes(*get_cmd_res)
+
+    def hdl_op_stderr_redir(
+        self,
+        par_out: tuple[TH_TokGrp],
+        tok_grp: TH_TokGrp,
+        idx: int,
+        old_stderr: io.TextIOBase,
+        buf_stderr: io.StringIO
+    ) -> tuple[TH_TokGrp, int, str] | int:
+        """
+        Handle the STDOUT redirection operation.
+
+        :param par_out: Whole output from the parser for the whole input line
+        :type par_out: tuple[TH_TokGrp]
+
+        :param tok_grp: Current token group (one element of par_out)
+        :type tok_grp: TH_TokGrp
+
+        :param idx: Index of current token group in whole parser output
+        :type idx: int
+
+        :param old_stderr: Original STDERR stream
+        :type old_stderr: io.TextIOBase
+
+        :param buf_stderr: STDERR buffer created
+        :type buf_stderr: io.StringIO
+
+        :returns: If no errors were encountered, a tuple containing:
+                      - the patched token group,
+                      - the number of token groups to skip next and
+                      - STDERR redirect output filename.
+                  Else, an integer error code.
+        :rtype: tuple[TH_TokGrp, int, str] | int
+        """
+        # CURSED
+        try:
+            nxt_grp, sp_chr = par_out[idx + 1]
+            stderr_fl = nxt_grp[0]
+        except IndexError:
+            ugen.err_Q("Missing filename for STDERR redirection")
+            return uerr.ERR_MISSING_FL_STDERR_REDIR
+
+        # Add the next token group to the current token group, excluding the
+        # STDERR redirect filename
+        tok_grp.extend(nxt_grp[1 :])
+        skip_grp = 1
+
+        sys.stderr = buf_stderr
+        # Loop through handlers and set their streams to the buffer created
+        self.loop_set_lgr_streams(old_stderr, buf_stderr)
+        return (tok_grp, skip_grp, stderr_fl)
+
+    def child_proc(
+        self,
+        cmd_fn: TH_CmdFn,
+        data: ugen.CmdData,
+        w: int,
+        stdin: str | None,
+        old_stdout: io.TextIOBase,
+        buf_stdout: io.StringIO
+    ) -> ty.NoReturn:
+        cmd_ret = self.rn_cmd_fn(cmd_fn, data)
+
+        if type(cmd_ret) != int:
+            ugen.crit("Last command returned non-integer")
+            cmd_ret = uerr.ERR_CMD_RETD_NON_INT
+        elif not (-2 ** 31 <= cmd_ret < 2 ** 31):
+            ugen.crit("Command return value exceeds 32-bit integer limit")
+            cmd_ret = uerr.ERR_RET_INT_TOO_LARGE
+
+        stdin_sz = 0
+        if sys.stdout != old_stdout:
+            stdin_sz = buf_stdout.tell()
+            stdin = buf_stdout.getvalue()
+        # Pass command exit code, size of stdin buffer and
+        # stdin buffer to parent process
+        os.write(w, st.pack("!iQ", cmd_ret, stdin_sz))
+        if stdin is None:
+            os.write(w, "".encode())
+        else:
+            os.write(w, stdin.encode())
+        os._exit(cmd_ret)
+
     def execute(self, ln: str) -> int:
         """
-        Execute input line.
+        Execute an input line.
 
-        :param ln: The input line to execute.
+        :param ln: Input line to execute.
         :type ln: str
 
-        :returns: An error code.
+        :returns: Integer error code.
         :rtype: int
         """
         # DEBUG: Full execution time start
         _t_full_exec = time.perf_counter_ns()
 
-        parser_out = tuple(self.parser.parse(ln))
-        len_parser_out = len(parser_out)
+        par_out = tuple(self.parser.parse(ln))
+        len_par_out = len(par_out)
         stdin = None
         stderr = None
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        buf_stdout = io.StringIO()
+        buf_stderr = io.StringIO()
+
         # To prevent empty commands making previous command exit code as 0
         is_empty = True
         skip_grp = 0
         err_code = uerr.ERR_ALL_GOOD
 
-        for idx, (tok_grp, sp_chr) in enumerate(parser_out):
-            # Skip groups already consumed
+        for idx, (tok_grp, sp_chr) in enumerate(par_out):
+            ###
+            ### SKIP TOKEN GROUPS ALREADY CONSUMED
+            ###
             if skip_grp:
                 skip_grp -= 1
                 continue
 
             ugen.debug_Q(f"raw_toks: {tok_grp}")
 
-            buf_stdout = io.StringIO()
-            buf_stderr = io.StringIO()
-
-            # Empty input line
+            ###
+            ### EMPTY INPUT LINE
+            ###
             if not tok_grp:
                 continue
             is_empty = False
@@ -398,82 +664,63 @@ class Intrpr:
             if cmd_nm == "snoo":
                 ugen.fatal_Q("Beauty overload", uerr.ERR_BEAUTY_OVERLD)
 
-            # DEBUG: Command resolution time start
-            _t_cmd_resln = time.perf_counter_ns()
+            ###
+            ### PIPING, REDIRECTION AND OTHER OPERATIONS
+            ###
+            buf_stdout = io.StringIO()
+            buf_stderr = io.StringIO()
+            stderr_fl = None
 
-            # Get command function and spec
-            get_cmd_res, cmd_src = self.get_cmd(
-                cmd_nm,
-                self.ext_cached_cmds,
-                self.cmd_reslvr,
-                self.env_vars
-            )
-            if isinstance(get_cmd_res, int):
-                err_msg = self.GET_CMD_ERR_MSG_MAP.get(get_cmd_res,
-                                                       "missing_err_msg")
-                ugen.err_Q(f"{err_msg}: '{cmd_nm}'")
-                return get_cmd_res
-
-            # DEBUG: Command resolution time end
-            _t_cmd_resln = time.perf_counter_ns() - _t_cmd_resln
-            ugen.debug_Q(
-                ugen.fmt_d_stmt("time", "cmd_reslv",
-                                fmt_t_ns(self.debug_time_expo, _t_cmd_resln))
-            )
-
-            cmd_fn, cmd_spec = get_cmd_res
-
-            # DEBUG: Actual command execution time start
-            _t_actual = time.perf_counter_ns()
-
-            old_stdout = sys.stdout
-            old_stderr = sys.stderr
-
-            # Piping
             if sp_chr.val == "|":
                 sys.stdout = buf_stdout
 
-            # STDERR redirection
             elif sp_chr.val == "?":
-                # Get the next token to 
-                # CURSED
-                try:
-                    nxt_grp, sp_chr = parser_out[idx + 1]
-                    stderr_fl = nxt_grp[0]
-                except IndexError:
-                    err_code = err_code or uerr.ERR_MISSING_FL_STDERR_REDIR
-                    ugen.err_Q("Missing filename for STDERR redirection")
+                op_res = self.hdl_op_stderr_redir(
+                    par_out,
+                    tok_grp,
+                    idx,
+                    old_stderr,
+                    buf_stderr
+                )
+                if isinstance(op_res, int):
+                    err_code = err_code or op_res
                     break
-                # Add the next token group to the current token group,
-                # excluding the STDERR redirect filename
-                tok_grp.extend(nxt_grp[1 :])
-                skip_grp += 1
+                tok_grp = op_res[0]
+                skip_grp += op_res[1]
+                stderr_fl = op_res[2]
 
-                sys.stderr = buf_stderr
-                # Loop through the handlers and set their streams to the
-                # buffer created
-                for lgr in lg.Logger.manager.loggerDict.values():
-                    if isinstance(lgr, lg.PlaceHolder):
-                        continue
-                    for hdlr in lgr.handlers:
-                        if hdlr.stream is old_stderr:
-                            hdlr.stream = buf_stderr
+            ###
+            ### RESOLVE COMMAND
+            ###
+            cmd_resln_res = self.cmd_resln(cmd_nm, buf_stderr, stderr_fl)
+            if isinstance(cmd_resln_res, int):
+                err_code = err_code or cmd_resln_res
+                break
+            cmd_fn = cmd_resln_res.cmd_fn
+            cmd_spec = cmd_resln_res.cmd_spec
+            cmd_src = cmd_resln_res.cmd_src
 
-            # STDOUT redirection
-            elif sp_chr.val == ">":
-                pass
-
-            # Classify parser output into arguments, options and flags
-            classi_res = self.classi_parser_output(tok_grp, cmd_spec)
+            ###
+            ### CLASSIFY PARSER OUTPUT INTO ARGUMENTS, OPTIONS AND FLAGS
+            ###
+            classi_res = self.classi_par_out(tok_grp, cmd_spec)
             if isinstance(classi_res, int):
-                return classi_res
+                err_code = err_code or classi_res
+                # Write to file only if STDERR redirection is happening. Note
+                # that stderr_fl will be defined only if stderr_redir is True
+                self.write_to_stderr(buf_stderr.getvalue(), stderr_fl)
+                break
             args, opts, flags = classi_res
-
-            # TODO: Remove!
             ugen.debug_Q(f"cmd:   '{cmd_nm}'")
             ugen.debug_Q(f"args:  {args}")
             ugen.debug_Q(f"opts:  {opts}")
             ugen.debug_Q(f"flags: {flags}")
+
+            ###
+            ### ACTUAL COMMAND EXECUTION
+            ###
+            # DEBUG: Actual command execution time start
+            _t_actual = time.perf_counter_ns()
 
             data = ugen.CmdData(
                 cmd_nm,
@@ -498,55 +745,39 @@ class Intrpr:
 
                     # Forked child process
                     if pid == 0:
-                        # No need to read in child process
                         os.close(r)
-                        cmd_ret = self.rn_cmd_fn(cmd_fn, data)
-                        if type(cmd_ret) != int:
-                            ugen.crit("Last command returned non-integer")
-                            cmd_ret = uerr.ERR_CMD_RETD_NON_INT
-                        elif not (-2 ** 31 <= cmd_ret < 2 ** 31):
-                            ugen.crit(
-                                "Command return value exceeds 32-bit integer limit"
-                            )
-                            cmd_ret = uerr.ERR_RET_INT_TOO_LARGE
-
-                        stdin_sz = 0
-                        if sys.stdout != old_stdout:
-                            stdin_sz = buf_stdout.tell()
-                            stdin = buf_stdout.getvalue()
-                        # Pass command exit code, size of stdin buffer and
-                        # stdin buffer to parent process
-                        os.write(w, st.pack("!iQ", cmd_ret, stdin_sz))
-                        if stdin is None:
-                            os.write(w, "".encode())
-                        else:
-                            os.write(w, stdin.encode())
-                        os._exit(cmd_ret)
-
+                        self.child_proc(
+                            cmd_fn,
+                            data,
+                            w,
+                            stdin,
+                            old_stdout,
+                            buf_stdout
+                        )
                     # Some issue, cannot fork
                     elif pid < 0:
                         ugen.crit(
                             "Failed to fork current process; try re-running the command"
                         )
                         err_code = err_code or uerr.ERR_CANT_FORK_PROC
-
                     # Parent process
                     else:
                         # Do NOT rely on the child's exit code! It can be wrong
-                        # because the OS only recognises 8-bit ints for exit
-                        # codes
-                        # No need to write in parent process
+                        # because the OS only recognises 8-bit integers for
+                        # exit codes
                         os.close(w)
+                        # 4 bytes for command return code
+                        # 8 bytes for the output length
+                        # "Output length" bytes for the output
                         ret_packed = self.rd_from_fd(r, 4)
                         ret_code = st.unpack("!i", ret_packed)[0]
                         stdin_sz_packed = self.rd_from_fd(r, 8)
                         stdin_sz = st.unpack("!Q", stdin_sz_packed)[0]
-                        # I have absolutely no idea how this can possibly work,
-                        # but it does. In this current design, no pipe output
-                        # and empty pipe output both have stdin_sz 0. I don't
-                        # know how the program is able to differentiate between
-                        # no pipe output and empty pipe output. No fucking idea
-                        # how.
+                        # Absolutely no idea how this can possibly work, but it
+                        # does. In the current design, no and empty pipe output
+                        # both have stdin_sz 0. Don't know how the program's
+                        # able to differentiate between no and empty pipe
+                        # output.
                         stdin = self.rd_from_fd(r, stdin_sz).decode()
                         os.close(r)
                         err_code = err_code or ret_code
@@ -567,44 +798,18 @@ class Intrpr:
                 sys.stderr = old_stderr
                 # Loop through the handlers and restore their streams to
                 # original STDERR
-                for lgr in lg.Logger.manager.loggerDict.values():
-                    if isinstance(lgr, lg.PlaceHolder):
-                        continue
-                    for hdlr in lgr.handlers:
-                        # This check is needed, because otherwise, the file
-                        # logger's STDERR is changed too
-                        if hdlr.stream is buf_stderr:
-                            hdlr.stream = old_stderr
+                self.loop_set_lgr_streams(buf_stderr, old_stderr)
 
-            # If stderr is not None, then write to the file named the token
-            # just after the '?' symbol
-            if stderr is not None:
-                try:
-                    with open(stderr_fl.val, "w") as f:
-                        if self.stderr_ansi:
-                            f.write(stderr)
-                        else:
-                            f.write(ugen.rm_ansi("", stderr))
-                    continue
-                except PermissionError:
-                    err_code = err_code or uerr.ERR_PERM_DENIED
-                    ugen.err_Q(f"Access denied; cannot write STDERR to file \"{stderr_fl.val}\"")
-                except FileNotFoundError:
-                    err_code = err_code or uerr.ERR_EMPTY_FL_REDIR
-                    ugen.err_Q(f"Empty file; cannot write STDERR to file \"{stderr_fl.val}\"")
-                except Exception as e:
-                    err_code = err_code or uerr.ERR_UNK_ERR
-                    ugen.fatal_Q(
-                        f"Unknown error ({e}); cannot write STDERR to file \"{stderr_fl.val}\"",
-                        uerr.ERR_UNK_FATAL,
-                        tb.format_exc()
-                    )
+            self.write_to_stderr(stderr, stderr_fl)
 
             # DEBUG: Actual command execution time end
             _t_actual = time.perf_counter_ns() - _t_actual
             ugen.debug_Q(
-                ugen.fmt_d_stmt("time", "actual_exec",
-                                fmt_t_ns(self.debug_time_expo, _t_actual))
+                ugen.fmt_d_stmt(
+                    "time",
+                    "actual_exec",
+                    fmt_t_ns(self.debug_time_expo, _t_actual)
+                )
             )
 
             ugen.debug_Q(f"env_vars:")
@@ -615,20 +820,39 @@ class Intrpr:
         # DEBUG: Full execution time end
         _t_full_exec = time.perf_counter_ns() - _t_full_exec
         ugen.debug_Q(
-            ugen.fmt_d_stmt("time", "full_exec",
-                            fmt_t_ns(self.debug_time_expo, _t_full_exec))
+            ugen.fmt_d_stmt(
+                "time",
+                "full_exec", fmt_t_ns(self.debug_time_expo, _t_full_exec)
+            )
         )
+
+        # Restore old STDOUT and STDERR, and restore log handlers' streams
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+        self.loop_set_lgr_streams(buf_stderr, old_stderr)
 
         if is_empty:
             return self.env_vars.get("_LAST_RET_")
         return err_code
 
     def rn_cmd_fn(
-            self,
-            cmd_fn: ty.Callable[[ugen.CmdData], int],
-            data: ugen.CmdData
-        ) -> int:
-        cmd_ret = 0
+        self,
+        cmd_fn: TH_CmdFn,
+        data: ugen.CmdData
+    ) -> int:
+        """
+        Run a command function.
+
+        :param cmd_fn: Command function to execute.
+        :type cmd_fn: TH_CmdFn
+
+        :param data: Data to be passed to the command function.
+        :type data: utils.gen.CmdData
+
+        :returns: Integer error code.
+        :rtype: int
+        """
+        cmd_ret = uerr.ERR_ALL_GOOD
 
         try:
             cmd_ret = cmd_fn(data)
@@ -662,4 +886,3 @@ class Intrpr:
             ugen.crit_Q(tb.format_exc())
 
         return cmd_ret
-

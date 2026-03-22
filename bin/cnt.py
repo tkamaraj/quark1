@@ -126,6 +126,10 @@ def run(data: ugen.CmdData) -> int:
         elif flag == "-l":
             show_lns = True
 
+    if not data.args and not data.stdin:
+        ugen.err("Expected at least one of STDIN or arguments")
+        return uerr.ERR_EXPD_STDIN_OR_ARGS
+
     # No filtering option given, thus show all
     if not (show_bytes or show_chrs or show_words or show_lns):
         show_bytes = True
@@ -140,13 +144,13 @@ def run(data: ugen.CmdData) -> int:
                                                     incl_nls_in_chrs,
                                                     alpha_patt)
 
-        # len("STDIN") is 5
-        max_arg_len = max(max_arg_len, 5)
+        # len("-") is 1
+        max_arg_len = max(max_arg_len, 1)
         max_fl_chrs_len = max(max_fl_chrs_len, len(in_chrs))
         max_fl_words_len = max(max_fl_words_len, len(in_words))
         max_fl_lns_len = max(max_fl_lns_len, len(in_lns))
 
-        op_buf.append(Out("STDIN", "-", in_chrs, in_words, in_lns))
+        op_buf.append(Out("-", "-", in_chrs, in_words, in_lns))
 
     # Go through arguments, which will considered filenames
     for arg in data.args:

@@ -10,23 +10,19 @@ if ty.TYPE_CHECKING:
     import intrpr.internals as iint
 
 HELP = ugen.HelpObj(
-    usage="cd [flag] [pth]",
+    usage="cd [flag ...] [pth]",
     summary="Change working directory",
     details=(
         "ARGUMENTS",
-        "\t<none>",
-        "\t\tChange to user directory",
-        "\tpth",
-        "\t\tDirectory to change to",
+        ("none", "Change to user directory"),
+        ("pth", "Directory to change to"),
+        "OPTIONS",
+        ("none", ""),
         "FLAGS",
-        "\t-!",
-        "\t\tChange to directory previously in",
-        "\t-p",
-        "\t\tPrint directory after changing to it",
-        "\t-m",
-        "\t\tCreate directories before changing",
-        "\t--tmp",
-        "\t\tCreate temporary directory and change to it"
+        ("-", "Change to directory previously in"),
+        ("-p", "Print directory after changing to it"),
+        ("-m", "Create directories before changing"),
+        ("-t", "Create temporary directory and change to it")
     )
 )
 
@@ -34,7 +30,7 @@ CMD_SPEC = ugen.CmdSpec(
     min_args=0,
     max_args=1,
     opts=(),
-    flags=("-!", "-p", "-m", "--tmp")
+    flags=("-", "-p", "-m", "-t")
 )
 
 ERR_CANT_ALLOT_TMP_DIR = 1000
@@ -89,13 +85,13 @@ def run(data: ugen.CmdData) -> int:
     tmp_dir = False
 
     for flag in data.flags:
-        if flag == "-!":
+        if flag == "-":
             chg_to_prev_cwd = True
         elif flag == "-p":
             prn_dir = True
         elif flag == "-m":
             mk_dirs = True
-        elif flag == "--tmp":
+        elif flag == "-t":
             tmp_dir = True
 
     if chg_to_prev_cwd and data.args:
@@ -112,7 +108,7 @@ def run(data: ugen.CmdData) -> int:
 
     # Change to previous directory option
     if chg_to_prev_cwd:
-        chg_to = pl.Path(data.env_vars.get("_PREV_CWD_")).expanduser().resolve()
+        chg_to = pl.Path(data.env_vars.get("_PREV_CWD_")).expanduser()
 
     # Temporary directory
     elif tmp_dir:
@@ -134,7 +130,7 @@ def run(data: ugen.CmdData) -> int:
             return ERR_CANT_ALLOT_TMP_DIR
 
     elif data.args:
-        chg_to = pl.Path(data.args[0]).expanduser().resolve()
+        chg_to = pl.Path(data.args[0]).expanduser()
 
     else:
         chg_to = pl.Path("~").expanduser()

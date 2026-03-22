@@ -12,6 +12,7 @@ class Cfg(ty.NamedTuple):
     rm_build: bool
     rm_pyi: bool
     quiet: bool
+    show_mods: bool
     run: bool
     out_dir: str
     out_fl_nm: str
@@ -24,6 +25,7 @@ def parse_args() -> dict[str, str | bool | None]:
     rm_build = True
     rm_pyi = True
     quiet = True
+    show_mods = False
     run = True
     out_dir = None
     out_fl_nm = None
@@ -51,8 +53,10 @@ def parse_args() -> dict[str, str | bool | None]:
             rm_pyi = False
         elif tok == "-bd":
             rm_build = False
-        elif tok == "-q":
+        elif tok == "-Q":
             quiet = False
+        elif tok == "-sm":
+            show_mods = True
         elif tok == "-outdir":
             if i == len_toks - 1:
                 sys.stderr.write(f"{called_nm}: Expected value for option '{tok}'\n")
@@ -89,6 +93,7 @@ def parse_args() -> dict[str, str | bool | None]:
         rm_build=rm_build,
         rm_pyi=rm_pyi,
         quiet=quiet,
+        show_mods=show_mods,
         run=run,
         out_dir=out_dir,
         out_fl_nm=out_fl_nm,
@@ -105,7 +110,7 @@ def main() -> None:
         "python",
         "-m",
         "nuitka",
-        "--standalone",
+        "--mode=standalone",
         "--follow-imports",
         "--python-flag=no_docstrings" if cfg.no_docstrs else "",
         "--lto=yes" if cfg.lto else "--lto=no",
@@ -113,7 +118,7 @@ def main() -> None:
         "--remove-output" if cfg.rm_build else "",
         "--no-pyi-file" if cfg.rm_pyi else "",
         "--quiet" if cfg.quiet else "",
-        "--show-modules",
+        "--show-modules" if cfg.show_mods else "",
         "--include-package=intrpr.builtin_cmds",
         "--output-folder-name=build",
         f"--output-dir={cfg.out_dir}" if cfg.out_dir is not None else "",

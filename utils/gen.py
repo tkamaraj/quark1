@@ -13,6 +13,10 @@ if ty.TYPE_CHECKING:
     import intrpr.internals as iint
 
 
+class LogicalErr(Exception):
+    pass
+
+
 class InvVarTypErr(Exception):
     def __init__(self, var_nm: str, var_typ: type, got_typ: type,
                  *args, **kwargs):

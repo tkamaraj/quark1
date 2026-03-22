@@ -1,5 +1,7 @@
 import typing as ty
 
+TMP_DIR = "/home/vallu/tmp/"
+
 
 def pprn(obj: ty.Any, depth: int = 0, indent_sz: int = 4, comma: bool = False) -> None:
     """

@@ -5,12 +5,11 @@ import utils.err_codes as uerr
 import utils.gen as ugen
 
 HELP = ugen.HelpObj(
-    usage="exec str ...",
+    usage="exec str [...]",
     summary="Execute strings in the Python interpreter",
     details=(
         "ARGUMENTS",
-        "\tstr",
-        "\t\tThe string to be executed in the Python interpreter"
+        ("str", "The string to be executed in the Python interpreter")
     )
 )
 

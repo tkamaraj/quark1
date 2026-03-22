@@ -6,8 +6,7 @@ HELP = ugen.HelpObj(
     summary="Clear the terminal screen",
     details=(
         "ARGUMENTS",
-        "\t<none>",
-        "\t\tClears the terminal"
+        ("none", "Clears the terminal")
     )
 )
 

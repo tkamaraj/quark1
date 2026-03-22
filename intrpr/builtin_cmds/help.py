@@ -15,15 +15,13 @@ HELP = ugen.HelpObj(
     summary="Display help for commands",
     details=(
         "ARGUMENTS",
-        "\t<none>",
-        "\t\tPrint help summaries of all built-in commands",
-        "\tcmd",
-        "\t\tThe built-in command to get help text for",
+        ("none", "Display help summaries of built-in commands"),
+        ("cmd", "Command to fetch help text for"),
+        "OPTIONS",
+        ("none", ""),
         "FLAGS",
-        "\t-a",
-        "\t\tDisplay summaries of all commands recognised",
-        "\t-e",
-        "\t\tDisplay summaries of external commands"
+        ("-a", "Display help summaries of all recognised commands"),
+        ("-e", "Display help summaries of external commands"),
     )
 )
 

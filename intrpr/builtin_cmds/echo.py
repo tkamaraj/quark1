@@ -3,22 +3,17 @@ import utils.gen as ugen
 import intrpr.eng as ieng
 
 HELP = ugen.HelpObj(
-    usage="echo [flag ...] [opt val ...] [str ...]",
+    usage="echo [flag ...] [opt ...] [str ...]",
     summary="Output text to standard output",
     details=(
         "ARGUMENTS",
-        "\t<none>",
-        "\t\tOutputs nothing",
-        "\tstr",
-        "\t\tThe string to be displayed on the standard output",
-        "FLAGS",
-        "\t-T",
-        "\t\tDo not insert any trailing character at the end",
+        ("none", "Outputs nothing"),
+        ("str", "String to be output on STDOUT"),
         "OPTIONS",
-        "\t-s",
-        "\t\tDefine the separation string between arguments",
-        "\t-e",
-        "\t\tDefine the character to be inserted at the end"
+        ("-s sep", "Define separation string"),
+        ("-e end", "Define terminal character"),
+        "FLAGS",
+        ("-T", "Kill terminal character")
     )
 )
 

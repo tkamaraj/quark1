@@ -1,0 +1,1 @@
+RESOLVED - No idea how. See the comment at that place in the code - An empty string ("") being piped from a command will be considered as no STDIN because of the way data is passed through the communication pipe between the parent and child process. Might need to change it later.

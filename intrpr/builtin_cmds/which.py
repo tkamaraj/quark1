@@ -1,5 +1,6 @@
 import math
 import pathlib as pl
+import pkgutil as pu
 import types
 import typing as ty
 
@@ -60,8 +61,7 @@ def run(data: ugen.CmdData) -> int:
     op_buf: list[Out | Err]
 
     err_code = uerr.ERR_ALL_GOOD
-    builtin_dir = pl.Path(uconst.BUILTIN_PTH).expanduser().absolute()
-    dir_pths = (uconst.BUILTIN_PTH,) + data.env_vars.get("_PTH_")
+    dir_pths = data.env_vars.get("_PTH_")
     show_all = False
     short_op = False
 
@@ -77,33 +77,42 @@ def run(data: ugen.CmdData) -> int:
     for arg in data.args:
         op_arg_local_buf = []
 
+        for mod_fl in pu.iter_modules([uconst.BUILTIN_PTH]):
+            if mod_fl.name == "__init__":
+                continue
+            if mod_fl.name != arg:
+                continue
+            op_arg_local_buf.append(Out(arg, "built-in"))
+            break
+
+        # Show all option not given and one match has already been found in the
+        # built-in commands
+        if not show_all and op_arg_local_buf:
+            max_arg_len = max(max_arg_len, len(arg))
+            op_buf.extend(op_arg_local_buf)
+            continue
+
         for dir_pth in dir_pths:
             mod = data.cmd_reslvr.ld_mod(arg, data.ext_cached_cmds, (dir_pth,))
             if not is_valid_cmd_mod(mod):
                 continue
 
             dir_pth = pl.Path(dir_pth).expanduser().absolute()
-
-            # If a built-in command, output text should not be a file
-            if dir_pth == builtin_dir:
-                op_arg_local_buf.append(Out(arg, "built-in"))
-            else:
-                fl_pth = dir_pth / f"{arg}.py"
-                op_arg_local_buf.append(Out(arg, str(fl_pth)))
-
-            max_arg_len = max(max_arg_len, len(arg))
+            fl_pth = dir_pth / f"{arg}.py"
+            op_arg_local_buf.append(Out(arg, str(fl_pth)))
 
             # If show all option is not given, break out after first hit
             if not show_all:
                 break
 
-        if not op_arg_local_buf:
+        if op_arg_local_buf:
+            max_arg_len = max(max_arg_len, len(arg))
+            op_buf.extend(op_arg_local_buf)
+        else:
             op_buf.append(
                 Err(f"Cannot locate command: '{arg}'",
                     ERR_CANT_LOCATE_CMD)
             )
-        else:
-            op_buf.extend(op_arg_local_buf)
 
     # 1 to compensate for the colon character being added to write calls in the
     # following loop. Don't want to do that calculation everytime the loop
