@@ -27,6 +27,7 @@ FLAGS
 
 class MainProgParsed(ty.NamedTuple):
     pre_ld_ext_cmds: bool
+    stdout_ansi: bool
     stderr_ansi: bool
     log_lvl: int
     debug_time_expo: int
@@ -45,6 +46,7 @@ def parse_argv(passed_toks: list[str]) -> MainProgParsed:
     skip = 0
 
     pre_ld_ext_cmds = False
+    stdout_ansi = False
     stderr_ansi = False
     log_lvl = ulog.WARN
     debug_time_expo = 6
@@ -60,6 +62,8 @@ def parse_argv(passed_toks: list[str]) -> MainProgParsed:
         # Flag: Show debug
         elif tok == "-d":
             log_lvl = ulog.DEBUG
+        elif tok == "-po":
+            stdout_ansi = True
         # Flag: Preserve ANSI colour codes in STDERR redirects
         elif tok == "-pe":
             stderr_ansi = True
@@ -98,6 +102,7 @@ def parse_argv(passed_toks: list[str]) -> MainProgParsed:
 
     return MainProgParsed(
         pre_ld_ext_cmds=pre_ld_ext_cmds,
+        stdout_ansi=stdout_ansi,
         stderr_ansi=stderr_ansi,
         log_lvl=log_lvl,
         debug_time_expo=debug_time_expo
@@ -116,6 +121,7 @@ def main() -> None:
         intrpr = ieng.Intrpr(
             cfg=cfg,
             pre_ld_ext_cmds=parsed_argv.pre_ld_ext_cmds,
+            stdout_ansi=parsed_argv.stdout_ansi,
             stderr_ansi=parsed_argv.stderr_ansi,
             debug_time_expo=parsed_argv.debug_time_expo,
             log_lvl=parsed_argv.log_lvl

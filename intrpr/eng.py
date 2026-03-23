@@ -37,7 +37,20 @@ class CmdReslnRes(ty.NamedTuple):
     cmd_src: str
 
 
-def fmt_t_ns(time_expo: int, ns: int) -> str:
+def fmt_t_ns(time_expo: int, ns: int) -> str | ty.NoReturn:
+    """
+    Format time in nanoseconds to required format.
+
+    :param time_expo: Exponent to raise 10 to for dividing the time in
+                      nanoseconds.
+    :type time_expo: int
+
+    :param ns: Time in nanoseconds.
+    :type ns: int
+
+    :returns: Formatted string.
+    :rtype: str
+    """
     if time_expo == 3:
         unit = "us"
     elif time_expo == 6:
@@ -57,13 +70,36 @@ def fmt_t_ns(time_expo: int, ns: int) -> str:
 
 class Intrpr:
     def __init__(
-            self,
-            cfg: cmgr.Cfg,
-            pre_ld_ext_cmds: bool,
-            stderr_ansi: bool,
-            debug_time_expo: int,
-            log_lvl: int
-        ) -> None:
+        self,
+        cfg: cmgr.Cfg,
+        pre_ld_ext_cmds: bool,
+        stdout_ansi: bool,
+        stderr_ansi: bool,
+        debug_time_expo: int,
+        log_lvl: int
+    ) -> None:
+        """
+        Initialise the interpreter.
+
+        :param cfg: Object containing configuration data.
+        :type cfg: intrpr.cfg_mgr.Cfg
+
+        :param pre_ld_ext_cmds: Load all external commands on interpreter
+                                startup?
+        :type pre_ld_ext_cmds: bool
+
+        :param stdout_ansi: Keep ANSI escape codes in STDOUT redirects?
+        :type stdout_ansi: bool
+
+        :param stderr_ansi: Keep ANSI escape codes in STDERR redirects?
+        :type stderr_ansi: bool
+
+        :param debug_time_expo: Debug time division exponent
+        :type debug_time_expo: int
+
+        :param log_lvl: Log level for loggers
+        :type log_lvl: int
+        """
         self.ext_cached_cmds: dict[str, iint.CmdCacheEntry]
 
         # Interpreter initialisation time start
@@ -90,6 +126,7 @@ class Intrpr:
 
         self.ext_cached_cmds = {}
         self.cfg = cfg
+        self.stdout_ansi = stdout_ansi
         self.stderr_ansi = stderr_ansi
         self.debug_time_expo = debug_time_expo
         self.log_lvl = log_lvl
@@ -103,6 +140,15 @@ class Intrpr:
         self.env_vars.set("_LAST_BAD_PROMPT_", "")
         self.env_vars.set("_LAST_RET_", uerr.ERR_ALL_GOOD)
 
+        try:
+            os.chdir(udeb.TMP_DIR)
+        except FileNotFoundError:
+            pass
+        except PermissionError:
+            pass
+        except OSError:
+            pass
+
         self.use_cfg()
 
         if pre_ld_ext_cmds:
@@ -112,18 +158,12 @@ class Intrpr:
             # DEBUG: Pre-load external module time end
             _t_pre_ld = time.perf_counter_ns() - _t_pre_ld
             ugen.debug_Q(
-                ugen.fmt_d_stmt("time", "tot_pre_ld_ext",
-                                fmt_t_ns(self.debug_time_expo, _t_pre_ld))
+                ugen.fmt_d_stmt(
+                    "time",
+                    "tot_pre_ld_ext",
+                    fmt_t_ns(self.debug_time_expo, _t_pre_ld)
+                )
             )
-
-        try:
-            os.chdir(udeb.TMP_DIR)
-        except FileNotFoundError:
-            pass
-        except PermissionError:
-            pass
-        except OSError:
-            pass
 
         # Interpreter initialisation time end
         _t_intrpr_init = time.perf_counter_ns() - _t_intrpr_init
@@ -178,8 +218,8 @@ class Intrpr:
                 skip += 1
                 continue
 
-            # Condensed path with slashes at the end for all directories
-            # except the root and user directory
+            # Condensed path with slashes at the end for all directories except
+            # the root and user directory
             elif prompt[i + 1] == "P":
                 cwd_conden = re.sub(
                     f"^{self.usr_dir}",
@@ -259,12 +299,16 @@ class Intrpr:
         config given.
         """
         self.env_vars.set("_PROMPT_", self.cfg.prompt)
+        expansion = {"@bin": uconst.BIN_PTH, "@prog": uconst.RUN_PTH}
         pths = []
-        for i in self.cfg.pth:
-            if i == ".":
-                pths.append(uconst.BIN_PTH)
-            else:
-                pths.append(str(pl.Path(i).expanduser().resolve()))
+
+        for pth in self.cfg.pth:
+            if pth.startswith("@bin"):
+                pth = re.sub("^@bin", uconst.BIN_PTH, pth)
+            elif pth.startswith("@prog"):
+                pth = re.sub("^@prog", uconst.RUN_PTH, pth)
+            pths.append(str(pl.Path(pth).expanduser().absolute()))
+
         self.env_vars.set("_PTH_", tuple(pths))
 
     def ld_all_ext_mods(self) -> None:
@@ -435,39 +479,50 @@ class Intrpr:
 
         return b"".join(chunks)
 
-    def write_to_stderr(
+    def write_to_stream(
         self,
-        stderr: str | None,
-        stderr_fl: "pint.Tok | None"
-    ) -> int:
+        txt: str | None,
+        fl: "pint.Tok | None",
+        typ: str
+    ) -> int | ty.NoReturn:
         """
-        :param stderr: Text captured for STDERR redirection.
-        :type stderr: str | None
+        :param txt: Text captured for redirection.
+        :type txt: str | None
 
-        :param stderr_fl: File to redirect STDERR to.
-        :type stderr_fl: parser.internals.Tok | None
+        :param fl: File to redirect stream to.
+        :type fl: parser.internals.Tok | None
 
-        :returns: Integer error code.
-        :rtype: int
+        :param typ: Type of redirection taking place (STDOUT/STDERR).
+        :type typ: str
+
+        :returns: Integer error code or program exit.
+        :rtype: int | typing.NoReturn
         """
-        if stderr is None or stderr_fl is None:
+        if txt is None or fl is None:
             return uerr.ERR_ALL_GOOD
+        if typ not in ("STDOUT", "STDERR"):
+            ugen.fatal(
+                f"Type of redirection was '{typ}', not supposed to happen",
+                uerr.ERR_UNK_ERR
+            )
 
         try:
-            with open(stderr_fl.val, "w") as f:
-                if self.stderr_ansi:
-                    f.write(stderr)
+            with open(fl.val, "w") as f:
+                if not self.stdout_ansi and typ == "STDOUT":
+                    f.write(ugen.rm_ansi("", txt))
+                elif not self.stderr_ansi and typ == "STDERR":
+                    f.write(ugen.rm_ansi("", txt))
                 else:
-                    f.write(ugen.rm_ansi("", stderr))
+                    f.write(txt)
         except PermissionError:
-            ugen.err_Q(f"Access denied; cannot write STDERR to file \"{stderr_fl.val}\"")
+            ugen.err_Q(f"Access denied; cannot write STDERR to file \"{fl.val}\"")
             return uerr.ERR_PERM_DENIED
         except FileNotFoundError:
-            ugen.err_Q(f"Empty file; cannot write STDERR to file \"{stderr_fl.val}\"")
+            ugen.err_Q(f"Empty file; cannot write STDERR to file \"{fl.val}\"")
             return uerr.ERR_EMPTY_FL_REDIR
         except Exception as e:
             ugen.fatal_Q(
-                f"Unknown error ({e}); cannot write STDERR to file \"{stderr_fl.val}\"",
+                f"Unknown error ({e}); cannot write STDERR to file \"{fl.val}\"",
                 uerr.ERR_UNK_FATAL,
                 tb.format_exc()
             )
@@ -519,7 +574,7 @@ class Intrpr:
             )
             err_code = get_cmd_res
             ugen.err_Q(f"{err_msg}: '{cmd_nm}'")
-            self.write_to_stderr(buf_stderr.getvalue(), stderr_fl)
+            self.write_to_stream(buf_stderr.getvalue(), stderr_fl, "STDERR")
             return get_cmd_res
 
         # DEBUG: Command resolution time end
@@ -534,56 +589,71 @@ class Intrpr:
 
         return CmdReslnRes(*get_cmd_res)
 
-    def hdl_op_stderr_redir(
+    def hdl_op_redir(
         self,
         par_out: tuple[TH_TokGrp],
         tok_grp: TH_TokGrp,
         idx: int,
-        old_stderr: io.TextIOBase,
-        buf_stderr: io.StringIO
-    ) -> tuple[TH_TokGrp, int, str] | int:
+        old_stream: io.TextIOBase,
+        buf_stream: io.StringIO,
+        typ: str
+    ) -> tuple[TH_TokGrp, int, str] | int | ty.NoReturn:
         """
-        Handle the STDOUT redirection operation.
+        Handle the STDOUT/STDERR redirection operation.
 
-        :param par_out: Whole output from the parser for the whole input line
+        :param par_out: Whole output from the parser for the whole input line.
         :type par_out: tuple[TH_TokGrp]
 
-        :param tok_grp: Current token group (one element of par_out)
+        :param tok_grp: Current token group (one element of par_out).
         :type tok_grp: TH_TokGrp
 
-        :param idx: Index of current token group in whole parser output
+        :param idx: Index of current token group in whole parser output.
         :type idx: int
 
-        :param old_stderr: Original STDERR stream
+        :param old_stream: Original stream.
         :type old_stderr: io.TextIOBase
 
-        :param buf_stderr: STDERR buffer created
+        :param buf_stream: Created stream.
         :type buf_stderr: io.StringIO
+
+        :param typ: Type of redirection (STDOUT/STDERR).
+        :type typ: str
 
         :returns: If no errors were encountered, a tuple containing:
                       - the patched token group,
                       - the number of token groups to skip next and
-                      - STDERR redirect output filename.
+                      - the redirect output filename.
                   Else, an integer error code.
         :rtype: tuple[TH_TokGrp, int, str] | int
         """
         # CURSED
         try:
             nxt_grp, sp_chr = par_out[idx + 1]
-            stderr_fl = nxt_grp[0]
+            redir_fl = nxt_grp[0]
         except IndexError:
             ugen.err_Q("Missing filename for STDERR redirection")
-            return uerr.ERR_MISSING_FL_STDERR_REDIR
+            return uerr.ERR_MISSING_FL_REDIR
 
         # Add the next token group to the current token group, excluding the
         # STDERR redirect filename
         tok_grp.extend(nxt_grp[1 :])
         skip_grp = 1
 
-        sys.stderr = buf_stderr
+        if typ == "STDERR":
+            sys.stderr = buf_stream
+        elif typ == "STDOUT":
+            sys.stdout = buf_stream
+        else:
+            ugen.fatal(
+                "Stream redirection type was '{typ}'. Not supposed to happen",
+                uerr.ERR_UNK_ERR
+            )
+
         # Loop through handlers and set their streams to the buffer created
-        self.loop_set_lgr_streams(old_stderr, buf_stderr)
-        return (tok_grp, skip_grp, stderr_fl)
+        # only if STDERR is being redirected
+        if typ == "STDERR":
+            self.loop_set_lgr_streams(old_stream, buf_stream)
+        return (tok_grp, skip_grp, redir_fl)
 
     def child_proc(
         self,
@@ -669,18 +739,36 @@ class Intrpr:
             ###
             buf_stdout = io.StringIO()
             buf_stderr = io.StringIO()
+            stdout_fl = None
             stderr_fl = None
 
             if sp_chr.val == "|":
                 sys.stdout = buf_stdout
 
+            elif sp_chr.val == ">":
+                op_res = self.hdl_op_redir(
+                    par_out,
+                    tok_grp,
+                    idx,
+                    old_stdout,
+                    buf_stdout,
+                    typ="STDOUT"
+                )
+                if isinstance(op_res, int):
+                    err_code = err_code or op_res
+                    break
+                tok_grp = op_res[0]
+                skip_grp += op_res[1]
+                stdout_fl = op_res[2]
+
             elif sp_chr.val == "?":
-                op_res = self.hdl_op_stderr_redir(
+                op_res = self.hdl_op_redir(
                     par_out,
                     tok_grp,
                     idx,
                     old_stderr,
-                    buf_stderr
+                    buf_stderr,
+                    typ="STDERR"
                 )
                 if isinstance(op_res, int):
                     err_code = err_code or op_res
@@ -707,8 +795,14 @@ class Intrpr:
             if isinstance(classi_res, int):
                 err_code = err_code or classi_res
                 # Write to file only if STDERR redirection is happening. Note
-                # that stderr_fl will be defined only if stderr_redir is True
-                self.write_to_stderr(buf_stderr.getvalue(), stderr_fl)
+                # that stderr_fl will be defined only if stderr_redir is True.
+                # This is done here, because the loop gets broken here, and the
+                # STDERR needs to written before control exits the loop
+                self.write_to_stream(
+                    buf_stderr.getvalue(),
+                    stderr_fl,
+                    "STDERR"
+                )
                 break
             args, opts, flags = classi_res
             ugen.debug_Q(f"cmd:   '{cmd_nm}'")
@@ -735,6 +829,7 @@ class Intrpr:
                 is_tty=True
             )
             stdin = None
+            stdout = None
             stderr = None
 
             try:
@@ -790,6 +885,9 @@ class Intrpr:
 
             # Restore output streams to original ones
             finally:
+                # Update stdout only if STDOUT redirection is done
+                if sys.stdout is not old_stdout:
+                    stdout = buf_stdout.getvalue()
                 sys.stdout = old_stdout
 
                 # Update stderr only if STDERR redirection is done
@@ -800,7 +898,8 @@ class Intrpr:
                 # original STDERR
                 self.loop_set_lgr_streams(buf_stderr, old_stderr)
 
-            self.write_to_stderr(stderr, stderr_fl)
+            self.write_to_stream(stdout, stdout_fl, "STDOUT")
+            self.write_to_stream(stderr, stderr_fl, "STDERR")
 
             # DEBUG: Actual command execution time end
             _t_actual = time.perf_counter_ns() - _t_actual

@@ -45,8 +45,21 @@ PERM_LOOKUP = {
 }
 
 
-def get_items(pth: str, hidden: bool, case_sensi: bool, unsorted: bool) \
-        -> tuple[list[tuple[pl.Path, os.stat_result]], int]:
+class SplDirEntry:
+    def __init__(self, pth: str):
+        self.path = os.path.realpath(pth)
+        self.name = os.path.basename(pth)
+        self.actual_name = os.path.basename(self.path)
+        self.is_dir = os.path.isdir(self.path)
+        self.stat = lambda: os.stat(self.path)
+
+
+def get_items(
+    pth: str,
+    hidden: bool,
+    case_sensi: bool,
+    unsorted: bool
+) -> tuple[list[tuple[pl.Path, os.stat_result]], int]:
     """
     List a directory.
 
@@ -54,10 +67,10 @@ def get_items(pth: str, hidden: bool, case_sensi: bool, unsorted: bool) \
     :type pth: str
 
     :returns: A tuple containing:
-        - a list of:
-            - a tuple containing the path object and stat result of each item,
-              and
-        - an integer, which is the error code.
+                 - a list of:
+                     - a tuple containing the path object and stat result of
+                       each item and
+                 - an integer, which is the error code.
     :rtype: tuple[list[str], int]
     """
     err_code = uerr.ERR_ALL_GOOD
@@ -83,6 +96,13 @@ def get_items(pth: str, hidden: bool, case_sensi: bool, unsorted: bool) \
                 # Case-sensitivity of sorting by name
                 sort_fn = lambda e: e.name if case_sensi else e.name.lower()
                 iterator = sorted(os.scandir(pth), key=sort_fn)
+
+            # Special directories, i.e. ".." and "."
+            if hidden:
+                parent = SplDirEntry("..")
+                curr = SplDirEntry(".")
+                items.append((parent, parent.stat()))
+                items.append((curr, curr.stat()))
 
             for i in iterator:
                 # Hidden option filtering
@@ -117,6 +137,8 @@ def long_list_prn(
         human_rdable: bool,
         disp_ctime: bool
     ) -> int:
+    entry: dict[str, ty.Any]
+
     # pwd.getpwuid(...) calls are real fucking expensive
     uid_cache = {}
     to_prn = []

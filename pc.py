@@ -14,12 +14,12 @@ class Cfg(ty.NamedTuple):
     quiet: bool
     show_mods: bool
     run: bool
-    out_dir: str
-    out_fl_nm: str
+    out_dir: str | None
+    out_fl_nm: str | None
     args: list[str]
 
 
-def parse_args() -> dict[str, str | bool | None]:
+def parse_args() -> Cfg:
     no_docstrs = True
     lto = False
     rm_build = True
