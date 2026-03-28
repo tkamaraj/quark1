@@ -18,11 +18,14 @@ HELP = ugen.HelpObj(
         "OPTIONS",
         ("none", ""),
         "FLAGS",
-        ("-l", "Use long listing format"),
-        ("-S", "Do not insert slashes at the end of directory names"),
-        ("-i", "Display inode number in long listing"),
-        ("-h", "Display human-readable sizes in long listing"),
-        ("-c", "Display CTIME instead MTIME in long listing")
+        ("-l, --long-list", "Use long listing format"),
+        ("-S, --no-slashes", "Do not insert slashes at the end of directory names"),
+        ("-i, --inode", "Display inode number in long listing"),
+        ("-h, --human-readable", "Display human-readable sizes in long listing"),
+        ("-c, --ctime", "Display CTIME instead MTIME in long listing"),
+        ("-a, --all", "Display all (including hidden files)"),
+        ("-e, --case-sensitive", "Case sensitive sort"),
+        ("-u, --unsorted", "Unsorted listing")
     )
 )
 
@@ -30,7 +33,16 @@ CMD_SPEC = ugen.CmdSpec(
     min_args=0,
     max_args=float("inf"),
     opts=(),
-    flags=("-l", "-S", "-i", "-h", "-c", "-a", "-e", "-u")
+    flags=(
+        "-l", "--long",
+        "-S", "--no-slash",
+        "-i", "--inode",
+        "-h", "--human-readable",
+        "-c", "--ctime",
+        "-a", "--all",
+        "-e", "--case-sensitive",
+        "-u", "--unsorted"
+    )
 )
 
 PERM_LOOKUP = {
@@ -345,22 +357,22 @@ def run(data: ugen.CmdData) -> int:
 
     # Detect flags
     for flag in data.flags:
-        if flag == "-l":
-            long_list = not long_list
-        elif flag == "-S":
-            slashes = not slashes
-        elif flag == "-i":
-            inodes = not inodes
-        elif flag == "-h":
-            human_rdable = not human_rdable
-        elif flag == "-c":
-            disp_ctime = not disp_ctime
-        elif flag == "-a":
-            hidden = not hidden
-        elif flag == "-e":
-            case_sensi = not case_sensi
-        elif flag == "-u":
-            unsorted = not unsorted
+        if flag in ("-l", "--long"):
+            long_list = True
+        elif flag in ("-S", "--no-slash"):
+            slashes = False
+        elif flag in ("-i", "--inode"):
+            inodes = True
+        elif flag in ("-h", "--human-readable"):
+            human_rdable = True
+        elif flag in ("-c", "--ctime"):
+            disp_ctime = True
+        elif flag in ("-a", "--all"):
+            hidden = True
+        elif flag in ("-e", "--case-sensitive"):
+            case_sensi = True
+        elif flag in ("-u", "--unsorted"):
+            unsorted = True
 
     # No arguments
     if not data.args:

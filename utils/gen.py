@@ -46,6 +46,7 @@ class CmdData(ty.NamedTuple):
     term_sz: os.terminal_size
     is_tty: bool
     stdin: str | None
+    exec_fn: ty.Callable[["ieng.Intrpr", str], int | ty.NoReturn]
     operation: str = ""
 
 
@@ -89,10 +90,12 @@ class StyleObj:
     """
     Style object to apply formatting to text objects.
     """
-    reset = "\033[0m"
-    red = "\033[31m"
-    green = "\033[32m"
-    yellow = "\033[33m"
+    reset = "\x1b[0m"
+    red = "\x1b[31m"
+    green = "\x1b[32m"
+    yellow = "\x1b[33m"
+    magenta = "\x1b[35m"
+    cyan = "\x1b[36m"
 
     def fmt(self, string: str, apply_fmting: bool, *args: str) -> str:
         return (

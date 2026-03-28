@@ -384,10 +384,10 @@ class Intrpr:
         return (*ext_cmd, "external")
 
     def classi_par_out(
-    self,
-    tok_grp: "list[pint.Tok]",
-    cmd_spec: ugen.CmdSpec
-) -> tuple[tuple[str, ...], dict[str, str], tuple[str, ...]] | int:
+        self,
+        tok_grp: "list[pint.Tok]",
+        cmd_spec: ugen.CmdSpec
+    ) -> tuple[tuple[str, ...], dict[str, str], tuple[str, ...]] | int:
         """
         Helper function to classify parser output into arguments, flags and
         options.
@@ -418,9 +418,9 @@ class Intrpr:
                 skip -= 1
                 continue
 
-            # LONG-FORM OPTIONS AND FLAGS
             # An option or a flag
-            if tok_val.startswith("--") and not tok.escd_hyphen:
+            if tok_val.startswith("-") and not tok.escd_hyphen:
+                # Not in spec
                 if tok_val not in (*cmd_spec.opts, *cmd_spec.flags):
                     ugen.err(f"Invalid option/flag: '{tok.val}'")
                     return uerr.ERR_INV_OPTS_FLAGS
@@ -430,32 +430,14 @@ class Intrpr:
                 # Then options
                 else:
                     if idx >= len(tok_grp) - 2:
-                        ugen.err(f"Expected value for option '{tok.val}'")
+                        ugen.err(f"Expected value for option: '{tok.val}'")
                         return uerr.ERR_EXPECTED_VAL_FOR_OPT
                     opts[tok_val] = tok_grp[idx + 2].val
                     skip += 1
+
                 continue
 
-            # SHORT-FORM OPTIONS OR FLAGS, OR COMBINED SHORT-FORM FLAGS
-            if tok_val.startswith("-") and not tok_val.startswith("--") and not tok.escd_hyphen:
-                if tok_val in cmd_spec.flags:
-                    flags.append(tok_val)
-                elif tok_val in cmd_spec.opts:
-                    if idx >= len(tok_grp) - 2:
-                        ugen.err(f"Expected value for option '{tok.val}'")
-                        return uerr.ERR_EXPECTED_VAL_FOR_OPT
-                    opts[tok_val] = tok_grp[idx + 2].val
-                    skip += 1
-                else:
-                    for i in tok_val[1 :]:
-                        if "-" + i in cmd_spec.flags:
-                            flags.append("-" + i)
-                            continue
-                        ugen.err(f"Invalid option/flag: '{tok.val}'")
-                        return uerr.ERR_INV_OPTS_FLAGS
-                continue
-
-            # ARGUMENTS
+            # An argument
             arg_cnt += 1
             if arg_cnt > cmd_spec.max_args:
                 ugen.err(

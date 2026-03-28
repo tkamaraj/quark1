@@ -20,8 +20,8 @@ HELP = ugen.HelpObj(
         "OPTIONS",
         ("none", ""),
         "FLAGS",
-        ("-a", "Display help summaries of all recognised commands"),
-        ("-e", "Display help summaries of external commands"),
+        ("-a, --all", "Display help summaries of all recognised commands"),
+        ("-e, --external", "Display help summaries of external commands"),
     )
 )
 
@@ -29,7 +29,10 @@ CMD_SPEC = ugen.CmdSpec(
     min_args=0,
     max_args=math.inf,
     opts=(),
-    flags=("-a", "-e")
+    flags=(
+        "-a", "--all",
+        "-e", "--external"
+    )
 )
 
 ERR_NO_SUCH_CMD = 1000
@@ -48,10 +51,15 @@ class Err:
         self.code = code
 
 
-def cons_detailed_help_str(help_obj: ugen.HelpObj,
-                           term_sz: os.terminal_size) -> str:
+def cons_detailed_help_str(
+    help_obj: ugen.HelpObj,
+    term_sz: os.terminal_size,
+    is_tty: bool
+) -> str:
     details_str = []
     max_arg_opt_flag_len = 0
+    single_ln_pad_amt = 11
+    tab = "\t".expandtabs(uconst.TAB_SZ)
 
     # To determine maximum length of arguments, options and flags
     for i in help_obj.details:
@@ -59,31 +67,31 @@ def cons_detailed_help_str(help_obj: ugen.HelpObj,
             continue
         max_arg_opt_flag_len = max(max_arg_opt_flag_len, len(i[0]))
 
+    single_ln_pad = min(max_arg_opt_flag_len, single_ln_pad_amt)
+
     for i in help_obj.details:
+        nl = False
+        # For heading like "ARGUMENTS", "OPTIONS", "FLAGS"...
         if isinstance(i, str):
-            details_str.append(i)
+            details_str.append(ugen.S.fmt(i, is_tty, ugen.S.magenta))
             continue
+        if len(i[0]) > single_ln_pad:
+            nl = True
+        clred_i0 = ugen.S.fmt(i[0], is_tty, ugen.S.cyan)
         full_ln = (
-            "\t"
-            + ugen.ljust(i[0], max_arg_opt_flag_len)
-            + (("  " + i[1]) if i[1] else "")
+            tab
+            + (clred_i0 if nl else ugen.ljust(clred_i0, single_ln_pad))
+            + (("\n" + tab * 2) if nl else "")
+            + ((tab + i[1]) if i[1] else "")
         )
-        # 2 * uconst.TAB_SZ is the number of characters that will be taken up
-        # when the tab is expanded into spaces (2 tabs used).
-        cols_taken = len(full_ln) + 2 * uconst.TAB_SZ
-        if cols_taken > term_sz.columns:
-            details_str.append(
-                full_ln[: term_sz.columns - 2 * uconst.TAB_SZ] + ">"
-            )
-        else:
-            details_str.append(full_ln[: term_sz.columns])
+        details_str.append(full_ln)
 
     return (
-        "\t".expandtabs(uconst.TAB_SZ) + help_obj.summary
-        + "\n\t".expandtabs(uconst.TAB_SZ) + "USAGE"
-        + "\n\t\t".expandtabs(uconst.TAB_SZ) + help_obj.usage
-        + "\n\t".expandtabs(uconst.TAB_SZ)
-        + "\n\t".join(details_str).expandtabs(uconst.TAB_SZ)
+        tab + help_obj.summary
+        + "\n" + tab + ugen.S.fmt("USAGE", is_tty, ugen.S.magenta)
+        + "\n" + tab * 2 + help_obj.usage
+        + "\n" + tab
+        + ("\n" + tab).join(details_str)
     )
 
 
@@ -103,7 +111,7 @@ def get_detailed_help(
         if isinstance(help_obj, ugen.HelpObj):
             op_buf.append(
                 Out(ugen.S.fmt(cmd_nm, is_tty, ugen.S.green),
-                    cons_detailed_help_str(help_obj, term_sz),
+                    cons_detailed_help_str(help_obj, term_sz, is_tty),
                     nl_after_cmd=True)
             )
             continue
@@ -112,7 +120,7 @@ def get_detailed_help(
         if isinstance(help_obj, ugen.HelpObj):
             op_buf.append(
                 Out(ugen.S.fmt(cmd_nm, is_tty, ugen.S.green),
-                    cons_detailed_help_str(help_obj, term_sz),
+                    cons_detailed_help_str(help_obj, term_sz, is_tty),
                     nl_after_cmd=True)
             )
             continue
@@ -134,9 +142,9 @@ def run(data: ugen.CmdData) -> int:
     ext_cmds = False
 
     for flag in data.flags:
-        if flag == "-a":
+        if flag in ("-a", "--all"):
             all_cmds = True
-        elif flag == "-e":
+        elif flag in ("-e", "--external"):
             ext_cmds = True
 
     if (all_cmds or ext_cmds) and data.args:
