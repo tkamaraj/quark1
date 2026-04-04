@@ -1,0 +1,7 @@
+librt==0.8.1
+mypy==1.19.1
+mypy_extensions==1.1.0
+Nuitka==4.0.5
+pathspec==1.0.4
+typing_extensions==4.15.0
+zstandard==0.25.0

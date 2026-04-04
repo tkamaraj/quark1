@@ -1,0 +1,7 @@
+https://stackoverflow.com/questions/3630774/logging-remove-inspect-and-modify-handlers-configured-by-fileconfig
+https://stackoverflow.com/questions/14058453/making-python-loggers-output-all-messages-to-stdout-in-addition-to-log-file
+https://docs.python.org/3/library/logging.html
+https://stackoverflow.com/questions/25989123/python-stringio-is-not-correctly-capturing-data-from-stderr
+https://docs.python.org/3/library/io.html
+https://docs.python.org/3/library/struct.html
+https://stackoverflow.com/questions/4842424/list-of-ansi-color-escape-sequences
